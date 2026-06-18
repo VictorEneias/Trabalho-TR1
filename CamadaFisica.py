@@ -1,5 +1,3 @@
-# CamadaFisica.py
-
 """
 Implementação inicial da camada física.
 
@@ -11,6 +9,9 @@ Nesta etapa, simulamos a modulação digital banda-base:
 Os sinais são representados por valores elétricos em volts.
 """
 
+# ----------------------------------------------------------------------
+# ---------------------------- Funções de conversão ----------------------------
+# ----------------------------------------------------------------------
 
 def texto_para_bits(texto):
     """
@@ -53,6 +54,11 @@ def bits_para_texto(bits):
         texto += chr(valor_ascii)
 
     return texto
+
+
+# ----------------------------------------------------------------------
+# ---------------------------- Códigos de banda base ----------------------------
+# ----------------------------------------------------------------------
 
 
 def codificar_nrz_polar(bits):
@@ -184,4 +190,132 @@ def decodificar_bipolar(sinal):
         else:
             bits.append(1)
 
+    return bits
+
+# ----------------------------------------------------------------------
+# ---------------------------- Modulações ----------------------------
+# ----------------------------------------------------------------------
+
+def modular_amplitude_shift(bits):
+    """
+    Modulação ASK: "transforma os 0s e 1s em pulsos elétricos"
+
+    Convenção usada:
+    bit 1 -> +5V
+    bit 0 -> 0V
+    """
+    sinal = []
+    for bit in bits:
+        if bit == 1:
+            sinal.append(5.0)
+        else:
+            sinal.append(0.0)
+    return sinal
+
+def demodular_amplitude_shift(sinal):
+    """
+    Decodificação ASK. 
+
+    0V representa bit 0.
+    Qualquer pulso positivo representa bit 1.
+    """
+    bits = []
+    for valor in sinal:
+        if valor > 0:
+            bits.append(1)
+        else:
+            bits.append(0)
+    return bits
+
+def modular_frequencia_shift(bits):
+    """
+    Modulação FSK: "transforma os 0s e 1s em pulsos elétricos de diferentes frequências"
+
+    Convenção usada:
+    bit 1 -> +5V com frequência X
+    bit 0 -> 0V com frequência Y
+    """
+    sinal = []
+    for bit in bits:
+        if bit == 1:
+            sinal.append(5.0)
+        else:
+            sinal.append(0.0)
+    return sinal
+
+def demodular_frequencia_shift(sinal):
+    """
+    Decodificação FSK. 
+
+    0V representa bit 0.
+    Qualquer pulso positivo representa bit 1.
+    """
+    bits = []
+    for valor in sinal:
+        if valor > 0:
+            bits.append(1)
+        else:
+            bits.append(0)
+    return bits
+
+def modular_fase_shift(bits):
+    """
+    Modulação PSK: "transforma os 0s e 1s em pulsos elétricos de diferentes fases"
+
+    Convenção usada:
+    bit 1 -> +5V com fase X
+    bit 0 -> 0V com fase Y
+    """
+    sinal = []
+    for bit in bits:
+        if bit == 1:
+            sinal.append(5.0)
+        else:
+            sinal.append(0.0)
+    return sinal
+
+def demodular_fase_shift(sinal):
+    """
+    Decodificação PSK. 
+
+    0V representa bit 0.
+    Qualquer pulso positivo representa bit 1.
+    """
+    bits = []
+    for valor in sinal:
+        if valor > 0:
+            bits.append(1)
+        else:
+            bits.append(0)
+    return bits
+
+def modular_16_qam(bits):
+    """
+    Modulação 16-QAM: "transforma os 0s e 1s em pulsos elétricos"
+
+    Convenção usada:
+    bit 1 -> +5V
+    bit 0 -> 0V
+    """
+    sinal = []
+    for bit in bits:
+        if bit == 1:
+            sinal.append(5.0)
+        else:
+            sinal.append(0.0)
+    return sinal
+
+def demodular_16_qam(sinal):
+    """
+    Decodificação 16-QAM. 
+
+    0V representa bit 0.
+    Qualquer pulso positivo representa bit 1.
+    """
+    bits = []
+    for valor in sinal:
+        if valor > 0:
+            bits.append(1)
+        else:
+            bits.append(0)
     return bits
