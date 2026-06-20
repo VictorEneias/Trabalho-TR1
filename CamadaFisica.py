@@ -1,404 +1,228 @@
-# CamadaFisica.py
-
 """
-Implementação da camada física.
+Camada Física do simulador.
 
-Modulações digitais (banda-base):
-- NRZ-Polar
-- Manchester
-- Bipolar
+Transforma bits em sinal elétrico (lista de tensões em Volts) e faz o caminho
+de volta no receptor. São dois grupos de técnicas:
 
-Modulações por portadora:
-- ASK (Amplitude Shift Keying)
-- FSK (Frequency Shift Keying)
-- QPSK (Quadrature Phase Shift Keying)
-- 16-QAM (16-Quadrature Amplitude Modulation)
+  - Modulação em banda-base: o próprio bit vira nível de tensão (NRZ, Manchester,
+    Bipolar). Não há portadora, é o "sinal cru".
+  - Modulação por portadora: os bits modulam uma senoide (ASK, FSK, QPSK, 16-QAM).
+    É o que de fato vai para o ar / cabo em sistemas reais.
 
-Meio de comunicação com ruído gaussiano n(x, σ).
-Os sinais são representados por valores elétricos em Volts.
+A demodulação por portadora usa correlação: multiplicamos o trecho recebido pela
+mesma senoide usada na transmissão e somamos. Se o trecho "parece" com a senoide,
+a soma dá um valor grande; se não, dá perto de zero. É assim que decidimos o bit
+mesmo com algum ruído por cima.
+
+O ruído do meio NÃO entra aqui — ele é responsabilidade do canal (canal.py),
+seguindo o diagrama do enunciado (o ruído pertence ao "meio de comunicação").
 """
 
 import math
-import random
+
+# Parâmetros das portadoras. AMOSTRAS_POR_SIMBOLO é quantos pontos usamos para
+# desenhar um período de símbolo — quanto maior, mais "redonda" fica a senoide.
+AMOSTRAS_POR_SIMBOLO = 100
+FREQUENCIA_PORTADORA = 1.0   # ciclos por símbolo (ASK, PSK, QAM)
+FREQ_FSK_0 = 1.0             # frequência que representa o bit 0 no FSK
+FREQ_FSK_1 = 2.0             # frequência que representa o bit 1 no FSK
+AMPLITUDE = 1.0             # amplitude da portadora, em Volts
 
 
-def texto_para_bits(texto):
-    """
-    Converte uma string de texto em uma lista de bits.
-
-    Cada caractere é convertido para seu valor ASCII de 8 bits.
-    Exemplo:
-    'A' -> 01000001
-    """
-
-    bits = []
-
-    for caractere in texto:
-        valor_ascii = ord(caractere)
-        binario = format(valor_ascii, "08b")
-
-        for bit in binario:
-            bits.append(int(bit))
-
-    return bits
-
-
-def bits_para_texto(bits):
-    """
-    Converte uma lista de bits de volta para texto.
-
-    A cada 8 bits, formamos um caractere ASCII.
-    """
-
-    texto = ""
-
-    for i in range(0, len(bits), 8):
-        byte = bits[i:i + 8]
-
-        if len(byte) < 8:
-            break
-
-        valor_binario = "".join(str(bit) for bit in byte)
-        valor_ascii = int(valor_binario, 2)
-        texto += chr(valor_ascii)
-
-    return texto
-
+# ---- Banda-base -----------------------------------------------------------
 
 def codificar_nrz_polar(bits):
-    """
-    Codificação NRZ-Polar.
-
-    Convenção usada:
-    bit 1 -> +1V
-    bit 0 -> -1V
-    """
-
-    sinal = []
-
-    for bit in bits:
-        if bit == 1:
-            sinal.append(1.0)
-        else:
-            sinal.append(-1.0)
-
-    return sinal
+    """NRZ-Polar: bit 1 vira +1V e bit 0 vira -1V. Um nível por bit."""
+    return [1.0 if bit == 1 else -1.0 for bit in bits]
 
 
 def decodificar_nrz_polar(sinal):
-    """
-    Decodificação NRZ-Polar.
-
-    Valores positivos são interpretados como 1.
-    Valores negativos são interpretados como 0.
-    """
-
-    bits = []
-
-    for valor in sinal:
-        if valor > 0:
-            bits.append(1)
-        else:
-            bits.append(0)
-
-    return bits
+    return [1 if v > 0 else 0 for v in sinal]
 
 
 def codificar_manchester(bits):
     """
-    Codificação Manchester.
-
-    Cada bit é representado por dois níveis de tensão.
-
-    Convenção usada:
-    bit 1 -> +1V seguido de -1V
-    bit 0 -> -1V seguido de +1V
+    Manchester: cada bit vira uma transição no meio do tempo de bit.
+    Usamos a convenção: 1 = descida (+1 depois -1), 0 = subida (-1 depois +1).
+    Por isso cada bit gera DOIS níveis de tensão.
     """
-
     sinal = []
-
     for bit in bits:
         if bit == 1:
-            sinal.append(1.0)
-            sinal.append(-1.0)
+            sinal += [1.0, -1.0]
         else:
-            sinal.append(-1.0)
-            sinal.append(1.0)
-
+            sinal += [-1.0, 1.0]
     return sinal
 
 
 def decodificar_manchester(sinal):
-    """
-    Decodificação Manchester.
-
-    Lê o sinal de dois em dois valores.
-    """
-
     bits = []
-
-    for i in range(0, len(sinal), 2):
-        par = sinal[i:i + 2]
-
-        if len(par) < 2:
-            break
-
-        primeiro = par[0]
-        segundo = par[1]
-
-        if primeiro > 0 and segundo < 0:
-            bits.append(1)
-        elif primeiro < 0 and segundo > 0:
-            bits.append(0)
-        else:
-            raise ValueError("Sinal Manchester inválido encontrado.")
-
+    # Lemos de dois em dois, porque cada bit ocupou duas amostras na codificação.
+    for i in range(0, len(sinal) - 1, 2):
+        bits.append(1 if sinal[i] > sinal[i + 1] else 0)
     return bits
 
 
 def codificar_bipolar(bits):
     """
-    Codificação Bipolar AMI.
-
-    Convenção usada:
-    bit 0 -> 0V
-    bit 1 -> alterna entre +1V e -1V
+    Bipolar AMI: bit 0 fica em 0V e bit 1 alterna entre +1V e -1V a cada
+    ocorrência. Essa alternância é o truque do AMI: dois pulsos seguidos de
+    mesma polaridade indicariam erro, o que ajuda a detectar problemas.
     """
-
     sinal = []
-    ultimo_pulso = -1.0
-
+    ultimo = -1.0  # começa em -1 para o primeiro 1 sair como +1
     for bit in bits:
         if bit == 0:
             sinal.append(0.0)
         else:
-            ultimo_pulso *= -1
-            sinal.append(ultimo_pulso)
-
+            ultimo = -ultimo
+            sinal.append(ultimo)
     return sinal
 
 
 def decodificar_bipolar(sinal):
-    """
-    Decodificação Bipolar.
-
-    0V representa bit 0.
-    Qualquer pulso positivo ou negativo representa bit 1.
-    Usa limiar de 0.5V para tolerar ruído.
-    """
-
-    bits = []
-
-    for valor in sinal:
-        if abs(valor) < 0.5:
-            bits.append(0)
-        else:
-            bits.append(1)
-
-    return bits
+    # Perto de zero é bit 0; qualquer pulso (positivo ou negativo) é bit 1.
+    # O limiar de 0.5V dá uma folga para tolerar ruído.
+    return [0 if abs(v) < 0.5 else 1 for v in sinal]
 
 
-# ---------------------------------------------------------------------------
-# Parâmetros da modulação por portadora
-# ---------------------------------------------------------------------------
+# ---- ASK ------------------------------------------------------------------
 
-AMOSTRAS_POR_SIMBOLO = 100  # amostras por período de símbolo
-FREQUENCIA_PORTADORA = 1.0  # ciclos por período de símbolo
-FREQUENCIA_FSK_0 = 1.0      # frequência do bit 0 no FSK
-FREQUENCIA_FSK_1 = 2.0      # frequência do bit 1 no FSK
-AMPLITUDE = 1.0             # amplitude da portadora em Volts
-
-
-# ---------------------------------------------------------------------------
-# Ruído gaussiano (meio de comunicação)
-# ---------------------------------------------------------------------------
-
-def adicionar_ruido_gaussiano(sinal, media=0.0, desvio_padrao=0.1):
-    """
-    Simula o meio de comunicação acrescentando ruído gaussiano n(media, desvio_padrao)
-    a cada amostra do sinal (valores em V).
-    """
-    return [v + random.gauss(media, desvio_padrao) for v in sinal]
-
-
-# ---------------------------------------------------------------------------
-# ASK – Amplitude Shift Keying
-# ---------------------------------------------------------------------------
-
-def codificar_ask(bits, amplitude=AMPLITUDE, frequencia=FREQUENCIA_PORTADORA,
-                  amostras=AMOSTRAS_POR_SIMBOLO):
-    """
-    ASK binário:
-    bit 1 → A·cos(2π·f·t)
-    bit 0 → 0 V
-    """
+def codificar_ask(bits, amostras=AMOSTRAS_POR_SIMBOLO):
+    """ASK: bit 1 liga a portadora (amplitude A), bit 0 desliga (0V)."""
     sinal = []
     for bit in bits:
-        A = amplitude if bit == 1 else 0.0
+        a = AMPLITUDE if bit == 1 else 0.0
         for n in range(amostras):
-            sinal.append(A * math.cos(2 * math.pi * frequencia * n / amostras))
+            sinal.append(a * math.cos(2 * math.pi * FREQUENCIA_PORTADORA * n / amostras))
     return sinal
 
 
-def decodificar_ask(sinal, amplitude=AMPLITUDE, frequencia=FREQUENCIA_PORTADORA,
-                    amostras=AMOSTRAS_POR_SIMBOLO):
-    """
-    Demodulação ASK por correlação com a portadora.
-    Decisão pelo limiar amplitude/2.
-    """
+def decodificar_ask(sinal, amostras=AMOSTRAS_POR_SIMBOLO):
     bits = []
-    limiar = amplitude / 2
+    limiar = AMPLITUDE / 2
     for i in range(0, len(sinal), amostras):
         bloco = sinal[i:i + amostras]
-        corr = (2 / amostras) * sum(
-            bloco[n] * math.cos(2 * math.pi * frequencia * n / amostras)
-            for n in range(len(bloco))
-        )
-        bits.append(1 if corr > limiar else 0)
+        energia = _correlacao(bloco, FREQUENCIA_PORTADORA, amostras)
+        bits.append(1 if energia > limiar else 0)
     return bits
 
 
-# ---------------------------------------------------------------------------
-# FSK – Frequency Shift Keying
-# ---------------------------------------------------------------------------
+# ---- FSK ------------------------------------------------------------------
 
-def codificar_fsk(bits, amplitude=AMPLITUDE, f0=FREQUENCIA_FSK_0, f1=FREQUENCIA_FSK_1,
-                  amostras=AMOSTRAS_POR_SIMBOLO):
-    """
-    FSK binário:
-    bit 0 → A·cos(2π·f0·t)
-    bit 1 → A·cos(2π·f1·t)
-    """
+def codificar_fsk(bits, amostras=AMOSTRAS_POR_SIMBOLO):
+    """FSK: o bit escolhe a frequência da portadora (f0 para 0, f1 para 1)."""
     sinal = []
     for bit in bits:
-        f = f1 if bit == 1 else f0
+        f = FREQ_FSK_1 if bit == 1 else FREQ_FSK_0
         for n in range(amostras):
-            sinal.append(amplitude * math.cos(2 * math.pi * f * n / amostras))
+            sinal.append(AMPLITUDE * math.cos(2 * math.pi * f * n / amostras))
     return sinal
 
 
-def decodificar_fsk(sinal, amplitude=AMPLITUDE, f0=FREQUENCIA_FSK_0, f1=FREQUENCIA_FSK_1,
-                    amostras=AMOSTRAS_POR_SIMBOLO):
-    """
-    Demodulação FSK por correlação com f0 e f1 — vence a frequência de maior correlação.
-    """
+def decodificar_fsk(sinal, amostras=AMOSTRAS_POR_SIMBOLO):
     bits = []
     for i in range(0, len(sinal), amostras):
         bloco = sinal[i:i + amostras]
-        cor0 = sum(bloco[n] * math.cos(2 * math.pi * f0 * n / amostras) for n in range(len(bloco)))
-        cor1 = sum(bloco[n] * math.cos(2 * math.pi * f1 * n / amostras) for n in range(len(bloco)))
-        bits.append(1 if cor1 > cor0 else 0)
+        # Testamos as duas frequências; vence a que tiver maior correlação.
+        c0 = _correlacao(bloco, FREQ_FSK_0, amostras)
+        c1 = _correlacao(bloco, FREQ_FSK_1, amostras)
+        bits.append(1 if c1 > c0 else 0)
     return bits
 
 
-# ---------------------------------------------------------------------------
-# QPSK – Quadrature Phase Shift Keying
-# ---------------------------------------------------------------------------
+# ---- QPSK -----------------------------------------------------------------
 
-# Constelação Gray-coded: dibit (b0, b1) → (componente I, componente Q)
-_QPSK_CONSTELACAO = {
-    (0, 0): ( 1,  1),   # 45°
-    (0, 1): (-1,  1),   # 135°
-    (1, 1): (-1, -1),   # 225°
-    (1, 0): ( 1, -1),   # 315°
+# QPSK manda 2 bits por símbolo escolhendo a fase da portadora. Cada par de bits
+# (dibit) vira um ponto (I, Q) na constelação. A codificação Gray garante que
+# pontos vizinhos diferem em só 1 bit, reduzindo erros.
+_QPSK = {
+    (0, 0): (1, 1),
+    (0, 1): (-1, 1),
+    (1, 1): (-1, -1),
+    (1, 0): (1, -1),
 }
-_QPSK_CONSTELACAO_INV = {v: k for k, v in _QPSK_CONSTELACAO.items()}
+_QPSK_INV = {v: k for k, v in _QPSK.items()}
 
 
-def codificar_qpsk(bits, amplitude=AMPLITUDE, frequencia=FREQUENCIA_PORTADORA,
-                   amostras=AMOSTRAS_POR_SIMBOLO):
-    """
-    QPSK: processa 2 bits por símbolo.
-    s(t) = (A/√2) · [I·cos(2π·f·t) − Q·sin(2π·f·t)]
-    """
-    if len(bits) % 2 != 0:
-        bits = bits + [0]
-
-    fator = amplitude / math.sqrt(2)
+def codificar_qpsk(bits, amostras=AMOSTRAS_POR_SIMBOLO):
+    bits = _completar(bits, 2)  # QPSK consome bits de 2 em 2
+    fator = AMPLITUDE / math.sqrt(2)
     sinal = []
     for i in range(0, len(bits), 2):
-        I, Q = _QPSK_CONSTELACAO[(bits[i], bits[i + 1])]
+        I, Q = _QPSK[(bits[i], bits[i + 1])]
         for n in range(amostras):
             t = n / amostras
-            sinal.append(fator * (I * math.cos(2 * math.pi * frequencia * t)
-                                - Q * math.sin(2 * math.pi * frequencia * t)))
+            sinal.append(fator * (I * math.cos(2 * math.pi * FREQUENCIA_PORTADORA * t)
+                                  - Q * math.sin(2 * math.pi * FREQUENCIA_PORTADORA * t)))
     return sinal
 
 
-def decodificar_qpsk(sinal, amplitude=AMPLITUDE, frequencia=FREQUENCIA_PORTADORA,
-                     amostras=AMOSTRAS_POR_SIMBOLO):
-    """
-    Demodulação coerente QPSK.
-    Correlaciona com cos (canal I) e -sin (canal Q); decide pelo sinal de cada componente.
-    """
+def decodificar_qpsk(sinal, amostras=AMOSTRAS_POR_SIMBOLO):
     bits = []
     for i in range(0, len(sinal), amostras):
         bloco = sinal[i:i + amostras]
-        I_r = (2 / amostras) * sum(
-            bloco[n] * math.cos(2 * math.pi * frequencia * n / amostras)
-            for n in range(len(bloco))
-        )
-        Q_r = -(2 / amostras) * sum(
-            bloco[n] * math.sin(2 * math.pi * frequencia * n / amostras)
-            for n in range(len(bloco))
-        )
-        I_dec = 1 if I_r >= 0 else -1
-        Q_dec = 1 if Q_r >= 0 else -1
-        bits.extend(_QPSK_CONSTELACAO_INV[(I_dec, Q_dec)])
+        # Projetamos o sinal nos eixos cosseno (I) e -seno (Q).
+        I = _correlacao(bloco, FREQUENCIA_PORTADORA, amostras)
+        Q = -_correlacao_seno(bloco, FREQUENCIA_PORTADORA, amostras)
+        ponto = (1 if I >= 0 else -1, 1 if Q >= 0 else -1)
+        bits += list(_QPSK_INV[ponto])
     return bits
 
 
-# ---------------------------------------------------------------------------
-# 16-QAM – 16-Quadrature Amplitude Modulation
-# ---------------------------------------------------------------------------
+# ---- 16-QAM ---------------------------------------------------------------
 
-# Mapeamento Gray-coded: par de bits → nível de amplitude (I ou Q)
-_QAM16_GRAY = {
-    (0, 0): -3,
-    (0, 1): -1,
-    (1, 1):  1,
-    (1, 0):  3,
-}
-_QAM16_GRAY_INV = {v: k for k, v in _QAM16_GRAY.items()}
-_QAM16_NIVEIS = sorted(_QAM16_GRAY_INV.keys())  # [-3, -1, 1, 3]
+# 16-QAM manda 4 bits por símbolo: 2 bits escolhem o nível de I e 2 o nível de Q.
+# Os níveis -3,-1,1,3 formam uma grade 4x4 de 16 pontos. Mapeamento Gray também.
+_QAM_GRAY = {(0, 0): -3, (0, 1): -1, (1, 1): 1, (1, 0): 3}
+_QAM_GRAY_INV = {v: k for k, v in _QAM_GRAY.items()}
+_QAM_NIVEIS = sorted(_QAM_GRAY_INV)  # [-3, -1, 1, 3]
 
 
-def codificar_16qam(bits, frequencia=FREQUENCIA_PORTADORA, amostras=AMOSTRAS_POR_SIMBOLO):
-    """
-    16-QAM: processa 4 bits por símbolo (bits 0-1 → I, bits 2-3 → Q).
-    s(t) = I·cos(2π·f·t) − Q·sin(2π·f·t)
-    """
-    while len(bits) % 4 != 0:
-        bits = bits + [0]
-
+def codificar_16qam(bits, amostras=AMOSTRAS_POR_SIMBOLO):
+    bits = _completar(bits, 4)  # 4 bits por símbolo
     sinal = []
     for i in range(0, len(bits), 4):
-        I = _QAM16_GRAY[(bits[i], bits[i + 1])]
-        Q = _QAM16_GRAY[(bits[i + 2], bits[i + 3])]
+        I = _QAM_GRAY[(bits[i], bits[i + 1])]
+        Q = _QAM_GRAY[(bits[i + 2], bits[i + 3])]
         for n in range(amostras):
             t = n / amostras
-            sinal.append(I * math.cos(2 * math.pi * frequencia * t)
-                       - Q * math.sin(2 * math.pi * frequencia * t))
+            sinal.append(I * math.cos(2 * math.pi * FREQUENCIA_PORTADORA * t)
+                         - Q * math.sin(2 * math.pi * FREQUENCIA_PORTADORA * t))
     return sinal
 
 
-def decodificar_16qam(sinal, frequencia=FREQUENCIA_PORTADORA, amostras=AMOSTRAS_POR_SIMBOLO):
-    """
-    Demodulação coerente 16-QAM.
-    Correlaciona com I e Q; quantiza cada componente para o nível mais próximo.
-    """
+def decodificar_16qam(sinal, amostras=AMOSTRAS_POR_SIMBOLO):
     bits = []
     for i in range(0, len(sinal), amostras):
         bloco = sinal[i:i + amostras]
-        I_r = (2 / amostras) * sum(
-            bloco[n] * math.cos(2 * math.pi * frequencia * n / amostras)
-            for n in range(len(bloco))
-        )
-        Q_r = -(2 / amostras) * sum(
-            bloco[n] * math.sin(2 * math.pi * frequencia * n / amostras)
-            for n in range(len(bloco))
-        )
-        I_dec = min(_QAM16_NIVEIS, key=lambda x: abs(x - I_r))
-        Q_dec = min(_QAM16_NIVEIS, key=lambda x: abs(x - Q_r))
-        bits.extend(_QAM16_GRAY_INV[I_dec] + _QAM16_GRAY_INV[Q_dec])
+        I = _correlacao(bloco, FREQUENCIA_PORTADORA, amostras)
+        Q = -_correlacao_seno(bloco, FREQUENCIA_PORTADORA, amostras)
+        # Arredonda cada componente para o nível mais próximo da grade.
+        I_nivel = min(_QAM_NIVEIS, key=lambda nivel: abs(nivel - I))
+        Q_nivel = min(_QAM_NIVEIS, key=lambda nivel: abs(nivel - Q))
+        bits += list(_QAM_GRAY_INV[I_nivel]) + list(_QAM_GRAY_INV[Q_nivel])
     return bits
+
+
+# ---- Apoio interno --------------------------------------------------------
+
+def _correlacao(bloco, freq, amostras):
+    """Correlação do bloco com cos(2*pi*freq*t). Mede 'quanto' de cosseno tem."""
+    return (2 / amostras) * sum(
+        bloco[n] * math.cos(2 * math.pi * freq * n / amostras)
+        for n in range(len(bloco))
+    )
+
+
+def _correlacao_seno(bloco, freq, amostras):
+    return (2 / amostras) * sum(
+        bloco[n] * math.sin(2 * math.pi * freq * n / amostras)
+        for n in range(len(bloco))
+    )
+
+
+def _completar(bits, multiplo):
+    """Completa a lista com zeros até o tamanho ser múltiplo de 'multiplo'."""
+    falta = (-len(bits)) % multiplo
+    return list(bits) + [0] * falta
