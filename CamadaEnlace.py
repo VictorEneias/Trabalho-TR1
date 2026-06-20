@@ -23,6 +23,8 @@ o enquadramento por bits, a paridade e o Hamming trabalham com listas de bits.
 CRC e checksum trabalham com 'bytes'. O Simulador faz as conversões necessárias.
 """
 
+import log
+
 FLAG = 0x7E          # 0111 1110 — delimitador de quadro (byte e bit stuffing)
 ESC = 0x7D           # 0111 1101 — caractere de escape (byte stuffing)
 FLAG_BITS = [0, 1, 1, 1, 1, 1, 1, 0]
@@ -43,6 +45,7 @@ def enquadrar_contagem(dados, tam_max=255):
         bloco = dados[i:i + tam_max - 1]
         quadro.append(len(bloco) + 1)
         quadro.extend(bloco)
+    log.registrar(f"  Enlace · enquadramento (contagem): {len(dados)} bytes → {len(quadro)} bytes")
     return bytes(quadro)
 
 
@@ -53,6 +56,7 @@ def desenquadrar_contagem(quadro):
         n = quadro[i]            # tamanho do quadro atual
         dados.extend(quadro[i + 1:i + n])
         i += n                   # pula para o próximo cabeçalho
+    log.registrar(f"  Enlace · desenquadramento (contagem): {len(quadro)} bytes → {len(dados)} bytes")
     return bytes(dados)
 
 
@@ -74,6 +78,7 @@ def enquadrar_flag_bytes(dados, tam_max=255):
         quadro.append(FLAG)
         quadro.extend(_inserir_bytes(dados[i:i + tam_max]))
         quadro.append(FLAG)
+    log.registrar(f"  Enlace · enquadramento (flag+byte stuffing): {len(dados)} bytes → {len(quadro)} bytes")
     return bytes(quadro)
 
 
@@ -95,6 +100,7 @@ def desenquadrar_flag_bytes(quadro):
             dentro = False
         else:
             dados.append(b)
+    log.registrar(f"  Enlace · desenquadramento (flag+byte stuffing): {len(quadro)} bytes → {len(dados)} bytes")
     return bytes(dados)
 
 
@@ -124,6 +130,7 @@ def enquadrar_flag_bits(bits, tam_max=None):
     quadro = []
     for bloco in blocos:
         quadro += FLAG_BITS + _inserir_bits(bloco) + FLAG_BITS
+    log.registrar(f"  Enlace · enquadramento (flag+bit stuffing): {len(bits)} bits → {len(quadro)} bits")
     return quadro
 
 
@@ -151,6 +158,7 @@ def desenquadrar_flag_bits(bits):
                     seguidos = 0
             else:
                 seguidos = 0
+    log.registrar(f"  Enlace · desenquadramento (flag+bit stuffing): {len(bits)} bits → {len(dados)} bits")
     return dados
 
 
@@ -166,13 +174,17 @@ def paridade_par(bits):
 def adicionar_paridade(dados):
     """Anexa um byte 0x00/0x01 com o bit de paridade par de todos os bits."""
     from Utils import bytes_para_bits
-    return dados + bytes([paridade_par(bytes_para_bits(dados))])
+    p = paridade_par(bytes_para_bits(dados))
+    log.registrar(f"  Enlace · paridade par: bit de paridade = {p}")
+    return dados + bytes([p])
 
 
 def verificar_paridade(dados_com_paridade):
     from Utils import bytes_para_bits
     dados, recebido = dados_com_paridade[:-1], dados_com_paridade[-1]
-    ok = paridade_par(bytes_para_bits(dados)) == recebido
+    calculado = paridade_par(bytes_para_bits(dados))
+    ok = calculado == recebido
+    log.registrar(f"  Enlace · verificação paridade: recebido={recebido}, calculado={calculado} → {'OK' if ok else 'ERRO'}")
     return dados, ok
 
 
@@ -194,13 +206,16 @@ def checksum_internet(dados):
 
 def adicionar_checksum(dados):
     c = checksum_internet(dados)
+    log.registrar(f"  Enlace · checksum: 0x{c:04x} anexado")
     return dados + bytes([c >> 8, c & 0xFF])
 
 
 def verificar_checksum(dados_com_checksum):
     dados, recebido = dados_com_checksum[:-2], dados_com_checksum[-2:]
     valor = (recebido[0] << 8) | recebido[1]
-    ok = checksum_internet(dados) == valor
+    calculado = checksum_internet(dados)
+    ok = calculado == valor
+    log.registrar(f"  Enlace · verificação checksum: recebido=0x{valor:04x}, calculado=0x{calculado:04x} → {'OK' if ok else 'ERRO'}")
     return dados, ok
 
 
@@ -223,13 +238,16 @@ def crc32(dados):
 
 def adicionar_crc(dados):
     c = crc32(dados)
+    log.registrar(f"  Enlace · CRC-32: 0x{c:08x} anexado")
     return dados + bytes([(c >> 24) & 0xFF, (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF])
 
 
 def verificar_crc(dados_com_crc):
     dados, recebido = dados_com_crc[:-4], dados_com_crc[-4:]
     valor = int.from_bytes(recebido, "big")
-    ok = crc32(dados) == valor
+    calculado = crc32(dados)
+    ok = calculado == valor
+    log.registrar(f"  Enlace · verificação CRC-32: recebido=0x{valor:08x}, calculado=0x{calculado:08x} → {'OK' if ok else 'ERRO'}")
     return dados, ok
 
 
@@ -240,6 +258,7 @@ def verificar_crc(dados_com_crc):
 # que, se um único bit chegar trocado, a "síndrome" aponta exatamente qual foi.
 
 def hamming_codificar(bits):
+    entrada = len(bits)
     bits = list(bits)
     while len(bits) % 4:
         bits.append(0)              # completa o último grupo de 4
@@ -250,6 +269,7 @@ def hamming_codificar(bits):
         p2 = d1 ^ d3 ^ d4
         p3 = d2 ^ d3 ^ d4
         saida += [p1, p2, d1, p3, d2, d3, d4]
+    log.registrar(f"  Enlace · Hamming (codificação): {entrada} bits → {len(saida)} bits (cada 4 viram 7)")
     return saida
 
 
@@ -257,7 +277,9 @@ def hamming_decodificar(bits):
     """Devolve (bits_de_dados, quantidade_de_bits_corrigidos)."""
     dados = []
     corrigidos = 0
+    blocos = 0
     for i in range(0, len(bits) - 6, 7):
+        blocos += 1
         bloco = bits[i:i + 7]
         p1, p2, d1, p3, d2, d3, d4 = bloco
         # Recalcula as paridades; a síndrome (s3 s2 s1) é a posição do erro.
@@ -270,4 +292,5 @@ def hamming_decodificar(bits):
             bloco[pos - 1] ^= 1
             d1, d2, d3, d4 = bloco[2], bloco[4], bloco[5], bloco[6]
         dados += [d1, d2, d3, d4]
+    log.registrar(f"  Enlace · Hamming (decodificação): {blocos} bloco(s), {corrigidos} bit(s) corrigido(s)")
     return dados, corrigidos

@@ -20,6 +20,8 @@ seguindo o diagrama do enunciado (o ruído pertence ao "meio de comunicação").
 
 import math
 
+import log
+
 # Parâmetros das portadoras. AMOSTRAS_POR_SIMBOLO é quantos pontos usamos para
 # desenhar um período de símbolo — quanto maior, mais "redonda" fica a senoide.
 AMOSTRAS_POR_SIMBOLO = 100
@@ -33,11 +35,15 @@ AMPLITUDE = 1.0             # amplitude da portadora, em Volts
 
 def codificar_nrz_polar(bits):
     """NRZ-Polar: bit 1 vira +1V e bit 0 vira -1V. Um nível por bit."""
-    return [1.0 if bit == 1 else -1.0 for bit in bits]
+    sinal = [1.0 if bit == 1 else -1.0 for bit in bits]
+    log.registrar(f"  Física · modulação NRZ-Polar: {len(bits)} bits → {len(sinal)} amostras (V)")
+    return sinal
 
 
 def decodificar_nrz_polar(sinal):
-    return [1 if v > 0 else 0 for v in sinal]
+    bits = [1 if v > 0 else 0 for v in sinal]
+    log.registrar(f"  Física · demodulação NRZ-Polar: {len(sinal)} amostras → {len(bits)} bits")
+    return bits
 
 
 def codificar_manchester(bits):
@@ -52,6 +58,7 @@ def codificar_manchester(bits):
             sinal += [1.0, -1.0]
         else:
             sinal += [-1.0, 1.0]
+    log.registrar(f"  Física · modulação Manchester: {len(bits)} bits → {len(sinal)} amostras (V)")
     return sinal
 
 
@@ -60,6 +67,7 @@ def decodificar_manchester(sinal):
     # Lemos de dois em dois, porque cada bit ocupou duas amostras na codificação.
     for i in range(0, len(sinal) - 1, 2):
         bits.append(1 if sinal[i] > sinal[i + 1] else 0)
+    log.registrar(f"  Física · demodulação Manchester: {len(sinal)} amostras → {len(bits)} bits")
     return bits
 
 
@@ -77,13 +85,16 @@ def codificar_bipolar(bits):
         else:
             ultimo = -ultimo
             sinal.append(ultimo)
+    log.registrar(f"  Física · modulação Bipolar (AMI): {len(bits)} bits → {len(sinal)} amostras (V)")
     return sinal
 
 
 def decodificar_bipolar(sinal):
     # Perto de zero é bit 0; qualquer pulso (positivo ou negativo) é bit 1.
     # O limiar de 0.5V dá uma folga para tolerar ruído.
-    return [0 if abs(v) < 0.5 else 1 for v in sinal]
+    bits = [0 if abs(v) < 0.5 else 1 for v in sinal]
+    log.registrar(f"  Física · demodulação Bipolar (AMI): {len(sinal)} amostras → {len(bits)} bits")
+    return bits
 
 
 # ---- ASK ------------------------------------------------------------------
@@ -95,6 +106,7 @@ def codificar_ask(bits, amostras=AMOSTRAS_POR_SIMBOLO):
         a = AMPLITUDE if bit == 1 else 0.0
         for n in range(amostras):
             sinal.append(a * math.cos(2 * math.pi * FREQUENCIA_PORTADORA * n / amostras))
+    log.registrar(f"  Física · modulação ASK: {len(bits)} bits → {len(sinal)} amostras (V)")
     return sinal
 
 
@@ -105,6 +117,7 @@ def decodificar_ask(sinal, amostras=AMOSTRAS_POR_SIMBOLO):
         bloco = sinal[i:i + amostras]
         energia = _correlacao(bloco, FREQUENCIA_PORTADORA, amostras)
         bits.append(1 if energia > limiar else 0)
+    log.registrar(f"  Física · demodulação ASK: {len(sinal)} amostras → {len(bits)} bits")
     return bits
 
 
@@ -117,6 +130,7 @@ def codificar_fsk(bits, amostras=AMOSTRAS_POR_SIMBOLO):
         f = FREQ_FSK_1 if bit == 1 else FREQ_FSK_0
         for n in range(amostras):
             sinal.append(AMPLITUDE * math.cos(2 * math.pi * f * n / amostras))
+    log.registrar(f"  Física · modulação FSK: {len(bits)} bits → {len(sinal)} amostras (V)")
     return sinal
 
 
@@ -128,6 +142,7 @@ def decodificar_fsk(sinal, amostras=AMOSTRAS_POR_SIMBOLO):
         c0 = _correlacao(bloco, FREQ_FSK_0, amostras)
         c1 = _correlacao(bloco, FREQ_FSK_1, amostras)
         bits.append(1 if c1 > c0 else 0)
+    log.registrar(f"  Física · demodulação FSK: {len(sinal)} amostras → {len(bits)} bits")
     return bits
 
 
@@ -155,6 +170,7 @@ def codificar_qpsk(bits, amostras=AMOSTRAS_POR_SIMBOLO):
             t = n / amostras
             sinal.append(fator * (I * math.cos(2 * math.pi * FREQUENCIA_PORTADORA * t)
                                   - Q * math.sin(2 * math.pi * FREQUENCIA_PORTADORA * t)))
+    log.registrar(f"  Física · modulação QPSK: {len(bits)} bits → {len(sinal)} amostras (V)")
     return sinal
 
 
@@ -167,6 +183,7 @@ def decodificar_qpsk(sinal, amostras=AMOSTRAS_POR_SIMBOLO):
         Q = -_correlacao_seno(bloco, FREQUENCIA_PORTADORA, amostras)
         ponto = (1 if I >= 0 else -1, 1 if Q >= 0 else -1)
         bits += list(_QPSK_INV[ponto])
+    log.registrar(f"  Física · demodulação QPSK: {len(sinal)} amostras → {len(bits)} bits")
     return bits
 
 
@@ -189,6 +206,7 @@ def codificar_16qam(bits, amostras=AMOSTRAS_POR_SIMBOLO):
             t = n / amostras
             sinal.append(I * math.cos(2 * math.pi * FREQUENCIA_PORTADORA * t)
                          - Q * math.sin(2 * math.pi * FREQUENCIA_PORTADORA * t))
+    log.registrar(f"  Física · modulação 16-QAM: {len(bits)} bits → {len(sinal)} amostras (V)")
     return sinal
 
 
@@ -202,6 +220,7 @@ def decodificar_16qam(sinal, amostras=AMOSTRAS_POR_SIMBOLO):
         I_nivel = min(_QAM_NIVEIS, key=lambda nivel: abs(nivel - I))
         Q_nivel = min(_QAM_NIVEIS, key=lambda nivel: abs(nivel - Q))
         bits += list(_QAM_GRAY_INV[I_nivel]) + list(_QAM_GRAY_INV[Q_nivel])
+    log.registrar(f"  Física · demodulação 16-QAM: {len(sinal)} amostras → {len(bits)} bits")
     return bits
 
 

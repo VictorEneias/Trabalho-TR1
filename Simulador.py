@@ -9,9 +9,12 @@ Caminho de VOLTA (receptor):
           -> bytes -> texto
 
 A função simular_local() faz o caminho inteiro na mesma máquina (ida + ruído +
-volta) e é o que a interface gráfica usa. Os programas transmissor.py e
-receptor.py reaproveitam transmitir() e receber() para fazer o mesmo, só que
+volta) e é o que a interface gráfica usa. Os programas Transmissor.py e
+Receptor.py reaproveitam transmitir() e receber() para fazer o mesmo, só que
 com o sinal passando por um socket.
+
+Em todas as etapas há chamadas a log.registrar(), então dá para acompanhar a
+mensagem passo a passo no terminal e no arquivo de log.
 
 Decisão de projeto: o usuário escolhe UMA técnica de modulação por vez (de banda-
 base OU por portadora). As duas famílias estão implementadas em CamadaFisica.
@@ -21,6 +24,7 @@ import CamadaFisica as fis
 import CamadaEnlace as enl
 import Utils
 import canal
+import log
 
 # Cada modulação tem um par (codificar, decodificar). Centralizar aqui evita
 # espalhar 'if tipo == ...' pelo código.
@@ -54,6 +58,7 @@ class Config:
 
 def _aplicar_edc(dados, edc):
     """Anexa a redundância de detecção/correção escolhida. Devolve bytes."""
+    log.registrar(f"TX » Enlace/EDC: aplicando '{edc}'")
     if edc == "nenhum":
         return dados
     if edc == "paridade":
@@ -72,6 +77,7 @@ def _aplicar_edc(dados, edc):
 
 def _enquadrar(protegido, cfg):
     """Enquadra os bytes protegidos e devolve a lista de bits a modular."""
+    log.registrar(f"TX » Enlace/Enquadramento: aplicando '{cfg.enquadramento}'")
     if cfg.enquadramento == "contagem":
         return Utils.bytes_para_bits(enl.enquadrar_contagem(protegido, cfg.tam_max))
     if cfg.enquadramento == "flag_bytes":
@@ -84,16 +90,21 @@ def _enquadrar(protegido, cfg):
 
 def transmitir(texto, cfg):
     """texto -> SINAL (lista de tensões). Não aplica ruído."""
+    log.registrar(f"TX » Aplicação: mensagem = {texto!r} ({len(texto)} caracteres)")
     dados = Utils.texto_para_bytes(texto)
+    log.registrar(f"TX » texto→bytes (UTF-8): {log.previa_bytes(dados)}")
     protegido = _aplicar_edc(dados, cfg.edc)
     bits = _enquadrar(protegido, cfg)
     codificar, _ = MODULACOES[cfg.modulacao]
-    return codificar(bits)
+    sinal = codificar(bits)
+    log.registrar(f"TX » sinal pronto para o meio: {len(sinal)} amostras")
+    return sinal
 
 
 # ---- Etapas internas da VOLTA --------------------------------------------
 
 def _desenquadrar(bits, cfg):
+    log.registrar(f"RX » Enlace/Desenquadramento: aplicando '{cfg.enquadramento}'")
     if cfg.enquadramento == "contagem":
         return enl.desenquadrar_contagem(Utils.bits_para_bytes(bits))
     if cfg.enquadramento == "flag_bytes":
@@ -105,6 +116,7 @@ def _desenquadrar(bits, cfg):
 
 def _verificar_edc(protegido, edc):
     """Devolve (dados, mensagem_de_status)."""
+    log.registrar(f"RX » Enlace/Verificação: aplicando '{edc}'")
     if edc == "nenhum":
         return protegido, "sem verificação"
     if edc == "paridade":
@@ -125,18 +137,25 @@ def _verificar_edc(protegido, edc):
 
 def receber(sinal, cfg):
     """SINAL -> (texto, status)."""
+    log.registrar(f"RX » Física: {len(sinal)} amostras chegaram do meio")
     _, decodificar = MODULACOES[cfg.modulacao]
     bits = decodificar(sinal)
     protegido = _desenquadrar(bits, cfg)
     dados, status = _verificar_edc(protegido, cfg.edc)
-    return Utils.bytes_para_texto(dados), status
+    texto = Utils.bytes_para_texto(dados)
+    log.registrar(f"RX » bits→texto: {texto!r}  (status do EDC: {status})")
+    return texto, status
 
 
 def simular_local(texto, cfg):
     """Faz ida + ruído + volta na mesma máquina. Útil para a GUI e os testes."""
+    log.iniciar("simulacao")
+    log.registrar(f"configuração: {cfg.como_dicionario()}")
     sinal = transmitir(texto, cfg)
     sinal_com_ruido = canal.aplicar_ruido_gaussiano(sinal, cfg.sigma)
     texto_recuperado, status = receber(sinal_com_ruido, cfg)
+    log.registrar(f"resultado: {texto_recuperado!r}  ({status})")
+    log.encerrar()
     return {
         "sinal": sinal,
         "sinal_com_ruido": sinal_com_ruido,

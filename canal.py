@@ -18,12 +18,17 @@ Tem duas funções bem distintas:
 import random
 import struct
 
+import log
+
 
 def aplicar_ruido_gaussiano(sinal, sigma, media=0.0):
     """Soma ruído gaussiano n(media, sigma) a cada amostra (Volts)."""
     if sigma <= 0:
+        log.registrar(f"  Meio · sem ruído (σ=0): {len(sinal)} amostras passam intactas")
         return list(sinal)
-    return [v + random.gauss(media, sigma) for v in sinal]
+    ruidoso = [v + random.gauss(media, sigma) for v in sinal]
+    log.registrar(f"  Meio · ruído gaussiano σ={sigma} somado a {len(sinal)} amostras")
+    return ruidoso
 
 
 def _receber_exato(conexao, n):
@@ -51,9 +56,12 @@ def enviar_sinal(conexao, sinal):
     """Empacota a lista de tensões como doubles e envia."""
     corpo = struct.pack(">I", len(sinal)) + struct.pack(">%dd" % len(sinal), *sinal)
     enviar_bytes(conexao, corpo)
+    log.registrar(f"  Socket · sinal enviado pela rede ({len(sinal)} amostras)")
 
 
 def receber_sinal(conexao):
     corpo = receber_bytes(conexao)
     (n,) = struct.unpack(">I", corpo[:4])
-    return list(struct.unpack(">%dd" % n, corpo[4:]))
+    sinal = list(struct.unpack(">%dd" % n, corpo[4:]))
+    log.registrar(f"  Socket · sinal recebido da rede ({n} amostras)")
+    return sinal

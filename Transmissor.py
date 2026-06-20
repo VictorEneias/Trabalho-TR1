@@ -5,6 +5,9 @@ Monta o sinal a partir do texto, adiciona o ruído do meio e envia para o
 receptor por um socket TCP. Manda primeiro a configuração (em JSON) para o
 receptor saber como demodular, e depois o sinal.
 
+Cada envio gera um log próprio (terminal + arquivo em logs/), descrevendo todo
+o caminho da mensagem.
+
 Uso:
     python3 Transmissor.py "mensagem"           # usa a config padrão
     python3 Transmissor.py "mensagem" 1.5       # com sigma de ruído = 1.5
@@ -15,20 +18,26 @@ import socket
 import sys
 
 import canal
+import log
 import Simulador
 
 
 def enviar(texto, cfg, host="127.0.0.1", porta=5000):
+    log.iniciar("transmissor")
+    log.registrar(f"TX » configuração: {cfg.como_dicionario()}")
+
     sinal = Simulador.transmitir(texto, cfg)
     # O ruído pertence ao meio; aplicamos aqui, logo antes de "soltar na rede".
     sinal = canal.aplicar_ruido_gaussiano(sinal, cfg.sigma)
 
+    log.registrar(f"TX » conectando ao receptor em {host}:{porta}")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conexao:
         conexao.connect((host, porta))
         canal.enviar_bytes(conexao, json.dumps(cfg.como_dicionario()).encode())
         canal.enviar_sinal(conexao, sinal)
 
-    print(f"Enviado: {texto!r}  ({len(sinal)} amostras, sigma={cfg.sigma})")
+    log.registrar(f"TX » mensagem {texto!r} enviada ({len(sinal)} amostras, sigma={cfg.sigma})")
+    log.encerrar()
 
 
 def main():
