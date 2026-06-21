@@ -165,12 +165,36 @@ def simular_local(texto, cfg):
 
 
 def main():
-    # Demonstração rápida no terminal (a entrega "de verdade" usa a GUI).
-    cfg = Config(modulacao="nrz", enquadramento="flag_bytes", edc="crc", sigma=0.0)
-    resultado = simular_local("Teleinformatica e Redes 1", cfg)
-    print("Texto recuperado:", resultado["texto"])
-    print("Status do EDC:", resultado["status"])
-    print("Amostras de sinal geradas:", len(resultado["sinal"]))
+    # Permite testar qualquer combinação direto pela linha de comando.
+    # Sem argumentos, roda uma demonstração com a configuração padrão.
+    import argparse
+    p = argparse.ArgumentParser(
+        description="Simula o caminho de uma mensagem pelas camadas física e de enlace.")
+    p.add_argument("texto", nargs="?", default="Teleinformatica e Redes 1",
+                   help="mensagem a transmitir (use aspas se tiver espaços)")
+    p.add_argument("--mod", default="nrz", choices=list(MODULACOES),
+                   help="modulação (padrão: nrz)")
+    p.add_argument("--enq", default="flag_bytes",
+                   choices=["contagem", "flag_bytes", "flag_bits"],
+                   help="enquadramento (padrão: flag_bytes)")
+    p.add_argument("--edc", default="crc",
+                   choices=["nenhum", "paridade", "checksum", "crc", "hamming"],
+                   help="detecção/correção de erro (padrão: crc)")
+    p.add_argument("--tam", type=int, default=255,
+                   help="tamanho máximo de quadro em bytes (padrão: 255)")
+    p.add_argument("--sigma", type=float, default=0.0,
+                   help="intensidade do ruído gaussiano no meio (padrão: 0.0)")
+    args = p.parse_args()
+
+    cfg = Config(modulacao=args.mod, enquadramento=args.enq, edc=args.edc,
+                 tam_max=args.tam, sigma=args.sigma)
+    resultado = simular_local(args.texto, cfg)
+
+    print()
+    print("Texto enviado:    ", repr(args.texto))
+    print("Texto recuperado: ", repr(resultado["texto"]))
+    print("Status do EDC:    ", resultado["status"])
+    print("Amostras de sinal:", len(resultado["sinal"]))
 
 
 if __name__ == "__main__":
