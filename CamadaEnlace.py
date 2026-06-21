@@ -54,6 +54,8 @@ def desenquadrar_contagem(quadro):
     i = 0
     while i < len(quadro):
         n = quadro[i]            # tamanho do quadro atual
+        if n == 0:               # byte de contagem corrompido pelo ruído: evita loop infinito
+            break
         dados.extend(quadro[i + 1:i + n])
         i += n                   # pula para o próximo cabeçalho
     log.registrar(f"  Enlace · desenquadramento (contagem): {len(quadro)} bytes → {len(dados)} bytes")
@@ -181,6 +183,9 @@ def adicionar_paridade(dados):
 
 def verificar_paridade(dados_com_paridade):
     from Utils import bytes_para_bits
+    if len(dados_com_paridade) < 2:      # quadro destruído pelo ruído: inválido
+        log.registrar("  Enlace · verificação paridade: quadro curto demais → inválido")
+        return b"", False
     dados, recebido = dados_com_paridade[:-1], dados_com_paridade[-1]
     calculado = paridade_par(bytes_para_bits(dados))
     ok = calculado == recebido
@@ -211,6 +216,9 @@ def adicionar_checksum(dados):
 
 
 def verificar_checksum(dados_com_checksum):
+    if len(dados_com_checksum) < 3:      # quadro destruído pelo ruído: inválido
+        log.registrar("  Enlace · verificação checksum: quadro curto demais → inválido")
+        return b"", False
     dados, recebido = dados_com_checksum[:-2], dados_com_checksum[-2:]
     valor = (recebido[0] << 8) | recebido[1]
     calculado = checksum_internet(dados)
@@ -243,6 +251,9 @@ def adicionar_crc(dados):
 
 
 def verificar_crc(dados_com_crc):
+    if len(dados_com_crc) < 5:           # quadro destruído pelo ruído: inválido
+        log.registrar("  Enlace · verificação CRC-32: quadro curto demais → inválido")
+        return b"", False
     dados, recebido = dados_com_crc[:-4], dados_com_crc[-4:]
     valor = int.from_bytes(recebido, "big")
     calculado = crc32(dados)
