@@ -1,19 +1,4 @@
-"""
-Canal de comunicação — o "meio" do diagrama do enunciado.
-
-Tem duas funções bem distintas:
-
-  1. O ruído: o meio nunca é perfeito. Somamos a cada amostra do sinal um valor
-     sorteado de uma gaussiana n(media, sigma). Quanto maior o sigma, mais o
-     sinal chega "tremido" no receptor. É aqui que mora a graça do trabalho:
-     ver até onde cada modulação/EDC aguenta antes de errar.
-
-  2. O transporte por socket: como o transmissor e o receptor podem ser dois
-     programas separados (até em máquinas diferentes), precisamos enviar o sinal
-     pela rede. Como TCP é um fluxo contínuo de bytes, sempre mandamos primeiro
-     o TAMANHO e depois o conteúdo, para o outro lado saber onde uma mensagem
-     termina e a próxima começa.
-"""
+# o "meio" do diagrama: aplica o ruido e faz o transporte por socket.
 
 import random
 import struct
@@ -22,7 +7,6 @@ import log
 
 
 def aplicar_ruido_gaussiano(sinal, sigma, media=0.0):
-    """Soma ruído gaussiano n(media, sigma) a cada amostra (Volts)."""
     if sigma <= 0:
         log.registrar(f"  Meio · sem ruído (σ=0): {len(sinal)} amostras passam intactas")
         return list(sinal)
@@ -32,7 +16,7 @@ def aplicar_ruido_gaussiano(sinal, sigma, media=0.0):
 
 
 def _receber_exato(conexao, n):
-    # recv() pode devolver menos bytes do que pedimos; insistimos até juntar n.
+    # recv pode vir picado; insiste ate juntar n bytes
     dados = bytearray()
     while len(dados) < n:
         parte = conexao.recv(n - len(dados))
@@ -43,7 +27,7 @@ def _receber_exato(conexao, n):
 
 
 def enviar_bytes(conexao, dados):
-    """Envia [4 bytes de tamanho][conteúdo]."""
+    # manda o tamanho antes do conteudo (tcp e fluxo continuo, sem fronteira de mensagem)
     conexao.sendall(struct.pack(">I", len(dados)) + dados)
 
 
@@ -53,7 +37,6 @@ def receber_bytes(conexao):
 
 
 def enviar_sinal(conexao, sinal):
-    """Empacota a lista de tensões como doubles e envia."""
     corpo = struct.pack(">I", len(sinal)) + struct.pack(">%dd" % len(sinal), *sinal)
     enviar_bytes(conexao, corpo)
     log.registrar(f"  Socket · sinal enviado pela rede ({len(sinal)} amostras)")

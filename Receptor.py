@@ -1,15 +1,8 @@
-"""
-Programa Receptor (lado RX).
-
-Fica ouvindo em uma porta TCP. A cada conexão, lê a configuração e o sinal,
-demodula/desenquadra/verifica e mostra o texto recuperado. Cada conexão é
-tratada em uma thread, então mais de um transmissor pode se conectar ao mesmo
-tempo (foi o que o professor pediu em aula). Cada conexão também tem o seu
-próprio arquivo de log dentro de logs/.
-
-Uso:
-    python3 Receptor.py            # ouve em 127.0.0.1:5000
-"""
+# lado RX: servidor tcp. cada conexao roda numa thread, entao da pra atender
+# varios transmissores ao mesmo tempo. cada conexao tem seu proprio log.
+#
+# uso:
+#   python3 Receptor.py        ouve em 127.0.0.1:5000
 
 import json
 import socket
@@ -43,7 +36,6 @@ def main(host="127.0.0.1", porta=5000):
     try:
         while True:
             conexao, origem = servidor.accept()
-            # uma thread por conexão -> aceita vários transmissores juntos
             threading.Thread(target=atender, args=(conexao, origem), daemon=True).start()
     except KeyboardInterrupt:
         print("\nReceptor encerrado.")
