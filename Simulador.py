@@ -1,24 +1,9 @@
-"""
-Simulador — a rotina principal que liga todas as camadas.
-
-Caminho de IDA (transmissor):
-    texto -> bytes -> [EDC] -> [enquadramento] -> bits -> modulação -> SINAL
-
-Caminho de VOLTA (receptor):
-    SINAL -> demodulação -> bits -> [desenquadramento] -> [verifica/corrige EDC]
-          -> bytes -> texto
-
-A função simular_local() faz o caminho inteiro na mesma máquina (ida + ruído +
-volta) e é o que a interface gráfica usa. Os programas Transmissor.py e
-Receptor.py reaproveitam transmitir() e receber() para fazer o mesmo, só que
-com o sinal passando por um socket.
-
-Em todas as etapas há chamadas a log.registrar(), então dá para acompanhar a
-mensagem passo a passo no terminal e no arquivo de log.
-
-Decisão de projeto: o usuário escolhe UMA técnica de modulação por vez (de banda-
-base OU por portadora). As duas famílias estão implementadas em CamadaFisica.
-"""
+# rotina principal: liga as camadas.
+# ida:   texto -> bytes -> [EDC] -> [enquadramento] -> bits -> modulacao -> sinal
+# volta: sinal -> demodulacao -> bits -> [desenquadramento] -> [verifica/corrige] -> texto
+# simular_local faz ida+ruido+volta na mesma maquina (usado pela GUI e nos testes);
+# Transmissor/Receptor usam transmitir/receber com o sinal indo por socket.
+# obs: escolhe-se UMA modulacao por vez (banda-base ou portadora).
 
 import CamadaFisica as fis
 import CamadaEnlace as enl
@@ -26,8 +11,7 @@ import Utils
 import canal
 import log
 
-# Cada modulação tem um par (codificar, decodificar). Centralizar aqui evita
-# espalhar 'if tipo == ...' pelo código.
+# nome -> (codificar, decodificar). evita um monte de if espalhado
 MODULACOES = {
     "nrz":        (fis.codificar_nrz_polar,  fis.decodificar_nrz_polar),
     "manchester": (fis.codificar_manchester, fis.decodificar_manchester),
@@ -40,8 +24,6 @@ MODULACOES = {
 
 
 class Config:
-    """Junta todas as escolhas da simulação num lugar só."""
-
     def __init__(self, modulacao="nrz", enquadramento="flag_bytes",
                  edc="crc", tam_max=255, sigma=0.0):
         self.modulacao = modulacao
@@ -54,10 +36,7 @@ class Config:
         return dict(self.__dict__)
 
 
-# ---- Etapas internas da IDA ----------------------------------------------
-
 def _aplicar_edc(dados, edc):
-    """Anexa a redundância de detecção/correção escolhida. Devolve bytes."""
     log.registrar(f"TX » Enlace/EDC: aplicando '{edc}'")
     if edc == "nenhum":
         return dados
@@ -69,14 +48,13 @@ def _aplicar_edc(dados, edc):
         return enl.adicionar_crc(dados)
     if edc == "hamming":
         bits = enl.hamming_codificar(Utils.bytes_para_bits(dados))
-        while len(bits) % 8:          # alinha em bytes para o enquadramento
+        while len(bits) % 8:          # completa pra fechar byte (o enquadramento espera bytes)
             bits.append(0)
         return Utils.bits_para_bytes(bits)
     raise ValueError("EDC desconhecido: " + edc)
 
 
 def _enquadrar(protegido, cfg):
-    """Enquadra os bytes protegidos e devolve a lista de bits a modular."""
     log.registrar(f"TX » Enlace/Enquadramento: aplicando '{cfg.enquadramento}'")
     if cfg.enquadramento == "contagem":
         return Utils.bytes_para_bits(enl.enquadrar_contagem(protegido, cfg.tam_max))
@@ -89,7 +67,6 @@ def _enquadrar(protegido, cfg):
 
 
 def transmitir(texto, cfg):
-    """texto -> SINAL (lista de tensões). Não aplica ruído."""
     log.registrar(f"TX » Aplicação: mensagem = {texto!r} ({len(texto)} caracteres)")
     dados = Utils.texto_para_bytes(texto)
     log.registrar(f"TX » texto→bytes (UTF-8): {log.previa_bytes(dados)}")
@@ -100,8 +77,6 @@ def transmitir(texto, cfg):
     log.registrar(f"TX » sinal pronto para o meio: {len(sinal)} amostras")
     return sinal
 
-
-# ---- Etapas internas da VOLTA --------------------------------------------
 
 def _desenquadrar(bits, cfg):
     log.registrar(f"RX » Enlace/Desenquadramento: aplicando '{cfg.enquadramento}'")
@@ -115,7 +90,6 @@ def _desenquadrar(bits, cfg):
 
 
 def _verificar_edc(protegido, edc):
-    """Devolve (dados, mensagem_de_status)."""
     log.registrar(f"RX » Enlace/Verificação: aplicando '{edc}'")
     if edc == "nenhum":
         return protegido, "sem verificação"
@@ -136,7 +110,6 @@ def _verificar_edc(protegido, edc):
 
 
 def receber(sinal, cfg):
-    """SINAL -> (texto, status)."""
     log.registrar(f"RX » Física: {len(sinal)} amostras chegaram do meio")
     _, decodificar = MODULACOES[cfg.modulacao]
     bits = decodificar(sinal)
@@ -148,7 +121,6 @@ def receber(sinal, cfg):
 
 
 def simular_local(texto, cfg):
-    """Faz ida + ruído + volta na mesma máquina. Útil para a GUI e os testes."""
     log.iniciar("simulacao")
     log.registrar(f"configuração: {cfg.como_dicionario()}")
     sinal = transmitir(texto, cfg)
@@ -165,8 +137,7 @@ def simular_local(texto, cfg):
 
 
 def main():
-    # Permite testar qualquer combinação direto pela linha de comando.
-    # Sem argumentos, roda uma demonstração com a configuração padrão.
+    # sem argumentos roda a config padrao; da pra passar tudo pela linha de comando
     import argparse
     p = argparse.ArgumentParser(
         description="Simula o caminho de uma mensagem pelas camadas física e de enlace.")

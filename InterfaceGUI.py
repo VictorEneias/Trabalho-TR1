@@ -1,18 +1,5 @@
-"""
-Interface gráfica do simulador (Tkinter).
-
-A tela deixa o usuário configurar tudo o que o diagrama do enunciado pede
-(tamanho de quadro, EDC, tipo de enquadramento, modulação e ruído), roda a
-simulação completa na mesma máquina e mostra dois resultados:
-
-  - o sinal elétrico gerado, desenhado num gráfico (Canvas puro, sem matplotlib);
-  - o texto recuperado no receptor e o status da verificação de erros.
-
-Também dá para enviar a mensagem de verdade por socket para um Receptor.py que
-esteja rodando, útil para a demonstração com várias conexões.
-
-Tudo o que é "lógica" fica no Simulador; aqui é só montar a janela e desenhar.
-"""
+# interface grafica (Tkinter). monta a tela, le a config, roda simular_local
+# e desenha o sinal no Canvas. a logica fica toda no Simulador.
 
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -20,7 +7,7 @@ from tkinter import ttk, messagebox
 import Simulador
 import Transmissor
 
-# Nomes amigáveis na tela -> chaves internas usadas pelo Simulador.
+# nome na tela -> chave interna do Simulador
 MODULACOES = {
     "NRZ-Polar": "nrz", "Manchester": "manchester", "Bipolar": "bipolar",
     "ASK": "ask", "FSK": "fsk", "QPSK": "qpsk", "16-QAM": "16qam",
@@ -37,7 +24,6 @@ EDCS = {
 
 
 def desenhar_sinal(canvas, sinal, max_amostras=800):
-    """Desenha o sinal como uma linha no Canvas, reescalando para caber."""
     canvas.delete("all")
     largura = int(canvas["width"])
     altura = int(canvas["height"])
@@ -47,11 +33,10 @@ def desenhar_sinal(canvas, sinal, max_amostras=800):
     if not trecho:
         return
 
-    pico = max(1e-9, max(abs(v) for v in trecho))   # evita divisão por zero
+    pico = max(1e-9, max(abs(v) for v in trecho))   # evita dividir por zero
     margem = altura * 0.4
 
-    # Linha de 0V no meio, só de referência visual.
-    canvas.create_line(0, meio, largura, meio, fill="#cccccc")
+    canvas.create_line(0, meio, largura, meio, fill="#cccccc")   # linha de 0V
 
     pontos = []
     for i, v in enumerate(trecho):
@@ -69,7 +54,6 @@ class Aplicacao:
         painel = ttk.Frame(raiz, padding=10)
         painel.grid(row=0, column=0, sticky="n")
 
-        # --- Campos de configuração ---
         ttk.Label(painel, text="Mensagem:").grid(row=0, column=0, sticky="w")
         self.texto = tk.Entry(painel, width=32)
         self.texto.insert(0, "Teleinformatica e Redes 1")
@@ -94,13 +78,11 @@ class Aplicacao:
         ttk.Button(painel, text="Enviar p/ Receptor (socket)", command=self.enviar_socket).grid(
             row=13, column=0, sticky="we", pady=2)
 
-        # --- Resultados ---
         self.status = ttk.Label(painel, text="", foreground="#00695c", wraplength=240)
         self.status.grid(row=14, column=0, columnspan=2, sticky="w", pady=(10, 0))
         self.recuperado = ttk.Label(painel, text="", wraplength=240)
         self.recuperado.grid(row=15, column=0, columnspan=2, sticky="w")
 
-        # --- Gráfico do sinal ---
         area = ttk.Frame(raiz, padding=10)
         area.grid(row=0, column=1, sticky="n")
         ttk.Label(area, text="Sinal transmitido (primeiras amostras):").grid(row=0, column=0, sticky="w")
